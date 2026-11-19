@@ -1,0 +1,109 @@
+name: Publish Carousel to Buffer
+
+on:
+  push:
+    paths:
+      - 'docs/images/**/manifest.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Publish pending carousel manifests to Buffer
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          CHANNEL_ID: "6afbe91bece6dfde5ff25adf"
+        run: |
+          python3 - <<'EOF'
+          import glob, json, os, sys, requests
+
+          token = os.environ.get("BUFFER_API_KEY")
+          channel_id = os.environ["CHANNEL_ID"]
+          if not token:
+              print("Missing BUFFER_API_KEY secret")
+              sys.exit(1)
+
+          ledger_path = "published.json"
+          published = []
+          if os.path.exists(ledger_path):
+              with open(ledger_path, "r", encoding="utf-8") as f:
+                  published = json.load(f)
+
+          mutation = """
+          mutation CreatePost($input: CreatePostInput!) {
+            createPost(input: $input) {
+              ... on PostActionSuccess {
+                post { id text status }
+              }
+              ... on MutationError { message }
+            }
+          }
+          """
+
+          for mpath in sorted(glob.glob("docs/images/*/manifest.json")):
+              with open(mpath, "r", encoding="utf-8") as f:
+                  m = json.load(f)
+              batch = m.get("batch")
+              slides = m.get("slides", [])
+              caption = m.get("caption", "").strip()
+              if not batch or batch in published or not slides:
+                  continue
+
+              ig_type = "carousel" if len(slides) > 1 else "post"
+              variables = {
+                  "input": {
+                      "channelId": channel_id,
+                      "text": caption,
+                      "schedulingType": "automatic",
+                      "mode": "shareNow",
+                      "assets": [{"image": {"url": u}} for u in slides],
+                      "metadata": {
+                          "instagram": {
+                              "type": ig_type,
+                              "shouldShareToFeed": True
+                          }
+                      }
+                  }
+              }
+
+              resp = requests.post(
+                  "https://api.buffer.com",
+                  json={"query": mutation, "variables": variables},
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Content-Type": "application/json"
+                  },
+                  timeout=30
+              )
+              res_json = resp.json()
+              print(f"Buffer response for {batch}:", json.dumps(res_json, indent=2))
+              if "errors" in res_json or "message" in res_json.get("data", {}).get("createPost", {}):
+                  sys.exit(1)
+              published.append(batch)
+
+          with open(ledger_path, "w", encoding="utf-8") as f:
+              json.dump(published, f, indent=2)
+              f.write("\n")
+          EOF
+
+      - name: Commit published ledger
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add published.json
+          git diff --staged --quiet || git commit -m "Record published carousel in ledger [skip ci]"
+          git push

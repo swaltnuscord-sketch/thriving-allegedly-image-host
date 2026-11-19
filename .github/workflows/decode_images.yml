@@ -35,7 +35,7 @@ jobs:
                       "batch": batch,
                       "caption": data.get("caption", ""),
                       "slides": [
-                          f"https://raw.githubusercontent.com/swaltnuscord-sketch/thriving-allegedly-image-host/main/docs/images/{batch}/{fn}"
+                          f"https://swaltnuscord-sketch.github.io/thriving-allegedly-image-host/images/{batch}/{fn}"
                           for fn in data.get("slides", {}).keys()
                       ]
                   }, mf, indent=2)

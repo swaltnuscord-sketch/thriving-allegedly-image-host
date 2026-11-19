@@ -14,18 +14,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install requests gdown
-
-      - name: Fetch or decode staged slides into docs/images
+      - name: Decode base64 slides into docs/images
         run: |
           python3 - <<'EOF'
-          import base64, glob, json, os, subprocess
+          import base64, glob, json, os
 
           for path in sorted(glob.glob("staging/*.json")):
               with open(path, "r", encoding="utf-8") as f:
@@ -35,16 +27,10 @@ jobs:
               os.makedirs(out_dir, exist_ok=True)
               filenames = []
 
-              for filename, val in data.get("slides", {}).items():
+              for filename, b64 in data.get("slides", {}).items():
                   out_path = os.path.join(out_dir, filename)
-                  if isinstance(val, dict) and val.get("drive_id"):
-                      subprocess.run(
-                          ["gdown", "--id", val["drive_id"], "-O", out_path],
-                          check=True,
-                      )
-                  else:
-                      with open(out_path, "wb") as img:
-                          img.write(base64.b64decode(val))
+                  with open(out_path, "wb") as img:
+                      img.write(base64.b64decode(b64))
                   filenames.append(filename)
 
               manifest_path = os.path.join(out_dir, "manifest.json")

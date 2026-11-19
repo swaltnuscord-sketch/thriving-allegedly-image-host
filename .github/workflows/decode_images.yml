@@ -14,10 +14,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Decode base64 slides into docs/images
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests gdown
+
+      - name: Fetch or decode staged slides into docs/images
         run: |
           python3 - <<'EOF'
-          import base64, glob, json, os
+          import base64, glob, json, os, subprocess
 
           for path in sorted(glob.glob("staging/*.json")):
               with open(path, "r", encoding="utf-8") as f:
@@ -25,10 +33,20 @@ jobs:
               batch = data["batch"]
               out_dir = os.path.join("docs", "images", batch)
               os.makedirs(out_dir, exist_ok=True)
-              for filename, b64 in data.get("slides", {}).items():
+              filenames = []
+
+              for filename, val in data.get("slides", {}).items():
                   out_path = os.path.join(out_dir, filename)
-                  with open(out_path, "wb") as img:
-                      img.write(base64.b64decode(b64))
+                  if isinstance(val, dict) and val.get("drive_id"):
+                      subprocess.run(
+                          ["gdown", "--id", val["drive_id"], "-O", out_path],
+                          check=True,
+                      )
+                  else:
+                      with open(out_path, "wb") as img:
+                          img.write(base64.b64decode(val))
+                  filenames.append(filename)
+
               manifest_path = os.path.join(out_dir, "manifest.json")
               with open(manifest_path, "w", encoding="utf-8") as mf:
                   json.dump({
@@ -36,7 +54,7 @@ jobs:
                       "caption": data.get("caption", ""),
                       "slides": [
                           f"https://swaltnuscord-sketch.github.io/thriving-allegedly-image-host/images/{batch}/{fn}"
-                          for fn in data.get("slides", {}).keys()
+                          for fn in filenames
                       ]
                   }, mf, indent=2)
               os.remove(path)
@@ -47,5 +65,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || git commit -m "Decode staged carousel images into docs/images"
+          git diff --staged --quiet || git commit -m "Host staged carousel images in docs/images"
           git push

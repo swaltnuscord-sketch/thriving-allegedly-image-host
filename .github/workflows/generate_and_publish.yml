@@ -1,0 +1,102 @@
+name: Generate and Publish Meme Carousel
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pillow requests
+
+      - name: Generate 10-slide carousel
+        run: python3 scripts/generate_carousel.py
+
+      - name: Commit generated slides to docs/images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/images/ used_jokes.json
+          git diff --staged --quiet || git commit -m "Generate 10-slide meme carousel [skip ci]"
+          git push
+
+      - name: Wait for GitHub Pages propagation
+        run: sleep 15
+
+      - name: Publish carousel to Buffer
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          CHANNEL_ID: "6afbe91bece6dfde5ff25adf"
+        run: |
+          python3 - <<'EOF'
+          import glob, json, os, sys, requests
+
+          token = os.environ.get("BUFFER_API_KEY")
+          channel_id = os.environ["CHANNEL_ID"]
+          if not token:
+              print("Missing BUFFER_API_KEY secret")
+              sys.exit(1)
+
+          manifests = sorted(glob.glob("docs/images/*/manifest.json"))
+          if not manifests:
+              print("No manifest found")
+              sys.exit(1)
+
+          latest = manifests[-1]
+          m = json.load(open(latest, "r", encoding="utf-8"))
+          slides = m.get("slides", [])
+          caption = m.get("caption", "")
+
+          mutation = """
+          mutation CreatePost($input: CreatePostInput!) {
+            createPost(input: $input) {
+              ... on PostActionSuccess {
+                post { id text status }
+              }
+              ... on MutationError { message }
+            }
+          }
+          """
+          variables = {
+              "input": {
+                  "channelId": channel_id,
+                  "text": caption,
+                  "schedulingType": "automatic",
+                  "mode": "shareNow",
+                  "assets": [{"image": {"url": u}} for u in slides],
+                  "metadata": {
+                      "instagram": {
+                          "type": "carousel",
+                          "shouldShareToFeed": True
+                      }
+                  }
+              }
+          }
+
+          resp = requests.post(
+              "https://api.buffer.com",
+              json={"query": mutation, "variables": variables},
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json"
+              },
+              timeout=30
+          )
+          res_json = resp.json()
+          print("Buffer Response:", json.dumps(res_json, indent=2))
+          if "errors" in res_json or "message" in res_json.get("data", {}).get("createPost", {}):
+              sys.exit(1)
+          EOF

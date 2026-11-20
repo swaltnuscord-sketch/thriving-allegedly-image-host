@@ -1,0 +1,46 @@
+name: Relay GDrive Carousel to Buffer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'staging/gdrive_batch.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  relay-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pillow requests
+
+      - name: Download GDrive slides to docs/images
+        run: python3 scripts/publish_to_buffer.py --stage-only
+
+      - name: Commit relayed slides to docs/images
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/images/
+          git diff --staged --quiet || git commit -m "Relay GDrive carousel slides to GitHub Pages [skip ci]"
+          git push
+
+      - name: Wait for GitHub Pages propagation
+        run: sleep 20
+
+      - name: Publish carousel to Instagram via Buffer
+        env:
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          CHANNEL_ID: "6afbe91bece6dfde5ff25adf"
+        run: python3 scripts/publish_to_buffer.py --publish-only

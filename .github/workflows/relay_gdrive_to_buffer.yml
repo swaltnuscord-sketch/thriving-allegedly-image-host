@@ -36,8 +36,20 @@ jobs:
           git diff --staged --quiet || git commit -m "Relay GDrive carousel slides to GitHub Pages [skip ci]"
           git push
 
-      - name: Wait for GitHub Pages propagation
-        run: sleep 20
+      - name: Wait for GitHub Pages deployment
+        run: |
+          BATCH_ID=$(python3 -c "import json; print(json.load(open('staging/gdrive_batch.json'))['batch_id'])")
+          URL="https://swaltnuscord-sketch.github.io/thriving-allegedly-image-host/images/${BATCH_ID}/slide_01.jpg"
+          for i in $(seq 1 18); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+            echo "Attempt $i: $URL -> HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timed out waiting for GitHub Pages"
+          exit 1
 
       - name: Publish carousel to Instagram via Buffer
         env:

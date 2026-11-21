@@ -3,7 +3,7 @@ name: Decode Staged Carousel Images
 on:
   push:
     paths:
-      - 'staging/*.json'
+      - 'staging/b64_*.json'
 
 permissions:
   contents: write
@@ -19,7 +19,7 @@ jobs:
           python3 - <<'EOF'
           import base64, glob, json, os
 
-          for path in sorted(glob.glob("staging/*.json")):
+          for path in sorted(glob.glob("staging/b64_*.json")):
               with open(path, "r", encoding="utf-8") as f:
                   data = json.load(f)
               batch = data["batch"]

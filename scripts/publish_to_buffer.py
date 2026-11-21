@@ -91,7 +91,8 @@ def publish_manifest(manifest_path: Path, channel_id: str, mode: str) -> None:
     }
     """
 
-    ig_type = "carousel" if len(slides) > 1 else "post"
+    # Buffer's InstagramPostMetadataInput uses type="post" for both single-image
+    # and multi-image (2-10 assets) carousel posts; "carousel" is rejected.
     variables = {
         "input": {
             "channelId": channel_id,
@@ -101,7 +102,7 @@ def publish_manifest(manifest_path: Path, channel_id: str, mode: str) -> None:
             "assets": [{"image": {"url": u}} for u in slides],
             "metadata": {
                 "instagram": {
-                    "type": ig_type,
+                    "type": "post",
                     "shouldShareToFeed": True,
                 }
             },
